@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas import ActionResult, EntryPayload, PageResult
+from app.schemas import ActionResult, BatchPayload, BatchResult, EntryPayload, PageResult
 from app.services.minearea import MineareaService
 
 router = APIRouter(prefix="/api/minearea", tags=["矿区台账"])
@@ -14,6 +14,41 @@ service = MineareaService()
 
 LIST_FIELDS = ["矿区编号", "矿区名称", "开采矿种", "核定产能", "开采方式", "服务年限", "安全等级", "矿区状态"]
 STATUSES = ["正常生产", "停产整顿", "检修中", "已闭坑"]
+
+
+@router.get("/summary")
+def summary() -> dict[str, Any]:
+    """台账概览：在册矿区数与状态分布，供看板卡片读取。"""
+    return service.summary()
+
+
+@router.post("/batch", response_model=BatchResult)
+def batch_create(payload: BatchPayload) -> BatchResult:
+    """批量建档：一次提交一批矿区，按矿区编号判重，逐行给回执。
+
+    缺开采矿种或编号格式不对的行整行退回，其余照常入库；
+    入库的矿区会同步生成入井名单待办。
+    """
+    if not payload.rows:
+        return BatchResult(ok=False, message="没有可建档的行，请先在文件里填入矿区数据")
+    receipt = service.batch_create(payload.rows)
+    return BatchResult(
+        ok=True,
+        message=receipt["message"],
+        total=receipt["total"],
+        created=receipt["created"],
+        duplicated=receipt["duplicated"],
+        rejected=receipt["rejected"],
+        synced_todos=receipt["synced_todos"],
+        results=receipt["results"],
+    )
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出矿区台账清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "minearea", "total": total, "items": items}
 
 
 @router.get("", response_model=PageResult[dict])
@@ -56,10 +91,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出矿区台账清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "minearea", "total": total, "items": items}

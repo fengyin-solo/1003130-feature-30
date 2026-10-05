@@ -18,6 +18,29 @@
       </article>
     </div>
 
+    <section class="receipt-panel">
+      <header class="receipt-head">
+        <strong>待办清单</strong>
+        <span>矿区批量建档结果会同步到这里，共 {{ todos.length }} 条待办</span>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr><th>记录编号</th><th>出勤区域</th><th>来源矿区</th><th>入井状态</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="todo in todos" :key="String(todo.id)">
+            <td>{{ todo.记录编号 ?? '—' }}</td>
+            <td>{{ todo.出勤区域 ?? '—' }}</td>
+            <td>{{ todo.来源矿区 || '—' }}</td>
+            <td>{{ todo.入井状态 ?? '—' }}</td>
+          </tr>
+          <tr v-if="!todos.length">
+            <td colspan="4" class="empty-state">暂无待办，矿区批量建档后会自动出现在这里</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -65,21 +88,30 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import { request } from '@/api/client'
+import { fetchJson, request } from '@/api/client'
 
 type Row = Record<string, string | number | null>
+type Stat = { label: string; value: number }
+type Todo = { id: number; 记录编号: string; 出勤区域: string; 来源矿区: string; 入井状态: string }
+type Summary = { 在册人数: number; 待办数: number; 状态分布: Record<string, number>; 待办清单: Todo[] }
 
 const ENDPOINT = '/api/shift'
 const columns = ["记录编号", "入井人员", "所属班组", "入井时间", "升井时间", "携带设备", "出勤区域", "入井状态"]
 const actions = ["登记入井", "登记升井", "超时联系"]
 const statuses = ["入井中", "已升井", "超时未升", "已联系"]
-const stats = [{"label": "入井中人数", "value": 0}, {"label": "已升井人数", "value": 0}, {"label": "超时人数", "value": 0}]
 
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const stats = ref<Stat[]>([
+  { label: '在册人数', value: 0 },
+  { label: '待办数', value: 0 },
+  { label: '入井中人数', value: 0 },
+  { label: '超时人数', value: 0 },
+])
+const todos = ref<Todo[]>([])
 
 function resetFilters() {
   filters.value = {}
@@ -104,9 +136,24 @@ async function runAction(action: string, row: Row) {
     if (!response.ok) {
       throw new Error('入井管理动作未生效，请稍后重试')
     }
-    await reload()
+    await Promise.all([reload(), loadSummary()])
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '入井管理操作失败'
+  }
+}
+
+async function loadSummary() {
+  try {
+    const payload = await fetchJson<Summary>(`${ENDPOINT}/summary`)
+    stats.value = [
+      { label: '在册人数', value: payload.在册人数 ?? 0 },
+      { label: '待办数', value: payload.待办数 ?? 0 },
+      { label: '入井中人数', value: payload.状态分布?.['入井中'] ?? 0 },
+      { label: '超时人数', value: payload.状态分布?.['超时未升'] ?? 0 },
+    ]
+    todos.value = payload.待办清单 ?? []
+  } catch {
+    // 概览读取失败时保留旧值，列表页照常可用
   }
 }
 
@@ -126,5 +173,8 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  void reload()
+  void loadSummary()
+})
 </script>

@@ -28,6 +28,35 @@ class EntryPayload(BaseModel):
     remark: str | None = None
 
 
+class BatchPayload(BaseModel):
+    """批量建档提交的行集合，每行是一份字段字典。"""
+
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class BatchRowResult(BaseModel):
+    """批量建档回执里的单行结果。"""
+
+    line: int
+    code: str = ""
+    name: str = ""
+    result: str
+    message: str = ""
+
+
+class BatchResult(BaseModel):
+    """批量建档回执：逐条结果加汇总计数。"""
+
+    ok: bool
+    message: str
+    total: int = 0
+    created: int = 0
+    duplicated: int = 0
+    rejected: int = 0
+    synced_todos: int = 0
+    results: list[BatchRowResult] = Field(default_factory=list)
+
+
 
 class MineareaEntry(BaseModel):
     """矿区明细结构。"""

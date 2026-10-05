@@ -76,3 +76,7 @@ npm run dev
   `backend/app/routers/<模块>.py`，业务规则在 `backend/app/services/<模块>.py`。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+- 矿区台账支持批量建档：`POST /api/minearea/batch` 接收 `{ rows: [...] }`（前端从 CSV 解析），
+  按矿区编号判重、只留最早一条，缺开采矿种或编号格式不对的行整行退回，回执逐条给出结果；
+  入库的矿区会同步生成入井名单待办，两处读数来自同一份数据。
+- 存量矿区的安全等级按开采矿种补全，开采方式沿用原有口径（缺省按井工开采）回填。

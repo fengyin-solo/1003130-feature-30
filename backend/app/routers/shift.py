@@ -16,6 +16,19 @@ LIST_FIELDS = ["记录编号", "入井人员", "所属班组", "入井时间", "
 STATUSES = ["入井中", "已升井", "超时未升", "已联系"]
 
 
+@router.get("/summary")
+def summary() -> dict[str, Any]:
+    """入井名单概览：在册人数、待办数与待办清单，供看板卡片读取。"""
+    return service.summary()
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出入井管理清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "shift", "total": total, "items": items}
+
+
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按记录编号检索"),
@@ -56,10 +69,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出入井管理清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "shift", "total": total, "items": items}

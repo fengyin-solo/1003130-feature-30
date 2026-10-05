@@ -33,6 +33,63 @@ class ShiftService:
     def get_entry(self, entry_id: int) -> dict[str, Any] | None:
         return store.find(MODULE, entry_id)
 
+    def summary(self) -> dict[str, Any]:
+        """入井名单概览：在册人数、待办数与待办清单，和矿区台账读的是同一份数据。"""
+        rows = store.rows(MODULE)
+        by_status = {status: 0 for status in STATUS_ORDER}
+        for row in rows:
+            name = str(row.get("status") or "")
+            by_status[name] = by_status.get(name, 0) + 1
+        todos = [row for row in rows if row.get("pending")]
+        return {
+            "在册人数": len(rows),
+            "待办数": len(todos),
+            "状态分布": by_status,
+            "待办清单": [
+                {
+                    "id": row.get("id"),
+                    "记录编号": row.get("记录编号"),
+                    "出勤区域": row.get("出勤区域"),
+                    "来源矿区": row.get("来源矿区", ""),
+                    "入井状态": row.get("status"),
+                }
+                for row in todos
+            ],
+        }
+
+    def sync_mine_todos(self, mines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """把矿区建档结果同步成入井名单待办：一个矿区一条，编号与矿区编号对应。
+
+        已存在的记录编号不再重复生成，重复执行不会产生重复待办。
+        """
+        rows = store.rows(MODULE)
+        existing = {str(row.get("记录编号") or "") for row in rows}
+        todos: list[dict[str, Any]] = []
+        for mine in mines:
+            code = str(mine.get("矿区编号") or "").strip()
+            record_code = f"SHIF-{code.removeprefix('MINE-')}" if code else ""
+            if not record_code or record_code in existing:
+                continue
+            todo = {
+                "id": max((int(row.get("id", 0)) for row in rows), default=0) + 1,
+                "记录编号": record_code,
+                "入井人员": "待登记",
+                "所属班组": "待登记",
+                "入井时间": "",
+                "升井时间": "",
+                "携带设备": "",
+                "出勤区域": str(mine.get("矿区名称") or ""),
+                "入井状态": STATUS_ORDER[0],
+                "来源矿区": code,
+                "status": STATUS_ORDER[0],
+                "pending": True,
+                "abnormal": False,
+            }
+            rows.append(todo)
+            existing.add(record_code)
+            todos.append(todo)
+        return todos
+
     def create_entry(self, values: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
         missing = [field for field in REQUIRED_FIELDS if not str(values.get(field) or "").strip()]
         if missing:
