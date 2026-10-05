@@ -28,6 +28,57 @@ class EntryPayload(BaseModel):
     remark: str | None = None
 
 
+class MineareaBatchItem(BaseModel):
+    """批量建档里的一行：字段名沿用台账列名，也接受 field_0..field_7 的按列顺序写法。"""
+
+    矿区编号: str | None = None
+    矿区名称: str | None = None
+    开采矿种: str | None = None
+    核定产能: str | None = None
+    开采方式: str | None = None
+    服务年限: str | None = None
+    安全等级: str | None = None
+    矿区状态: str | None = None
+
+
+class MineareaBatchPayload(BaseModel):
+    """批量建档提交：文件原文（CSV/TSV 文本）或直接给若干行，二选一。"""
+
+    content: str | None = Field(default=None, description="表格文件的文本内容，首行可为表头")
+    filename: str | None = Field(default=None, description="原始文件名，仅用于识别分隔符与回执展示")
+    rows: list[MineareaBatchItem] = Field(default_factory=list, description="不走文件时直接提交的行")
+
+
+class MineareaBatchReceiptLine(BaseModel):
+    """逐条回执：行号、提交内容、是否入库、结果分类与说明。"""
+
+    line: int
+    code: str | None = None
+    name: str | None = None
+    ok: bool
+    result: str = Field(description="created 新登记 / duplicated 重复编号退回 / rejected 校验退回")
+    message: str
+    entry: dict[str, Any] | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MineareaBatchResult(BaseModel):
+    """批量建档总回执：汇总计数 + 逐行结果 + 同步到入井名单的情况。"""
+
+    ok: bool
+    message: str
+    total: int = 0
+    created: int = 0
+    duplicated: int = 0
+    rejected: int = 0
+    stock_backfilled: int = 0
+    existing_completed: int = 0
+    shift_synced: int = 0
+    roster_pending: int = 0
+    roster_headcount: int = 0
+    receipts: list[MineareaBatchReceiptLine] = Field(default_factory=list)
+
+
 
 class MineareaEntry(BaseModel):
     """矿区明细结构。"""

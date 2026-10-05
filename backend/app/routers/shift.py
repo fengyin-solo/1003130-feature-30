@@ -1,4 +1,4 @@
-"""入井管理接口：维护入井记录，覆盖登记入井、登记升井、超时联系等动作。"""
+"""入井管理接口：维护入井记录与入井名单待办，覆盖登记入井、登记升井、超时联系等动作。"""
 from __future__ import annotations
 
 from typing import Any
@@ -13,13 +13,13 @@ router = APIRouter(prefix="/api/shift", tags=["入井管理"])
 service = ShiftService()
 
 LIST_FIELDS = ["记录编号", "入井人员", "所属班组", "入井时间", "升井时间", "携带设备", "出勤区域", "入井状态"]
-STATUSES = ["入井中", "已升井", "超时未升", "已联系"]
+STATUSES = ["待编排", "入井中", "已升井", "超时未升", "已联系"]
 
 
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按记录编号检索"),
-    status: str | None = Query(default=None, description="入井中、已升井、超时未升、已联系"),
+    status: str | None = Query(default=None, description="待编排、入井中、已升井、超时未升、已联系"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
@@ -28,6 +28,27 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+# 固定路径声明在 /{entry_id} 之前，避免被当成记录 id 解析
+@router.get("/roster")
+def roster_summary() -> dict[str, Any]:
+    """入井名单口径：待办清单条数与在册人数，数据与矿区台账建档回执同源。"""
+    summary = service.roster_summary()
+    items, total = service.list_entries(status="待编排", page=1, size=200)
+    return {
+        "module": "shift",
+        **summary,
+        "pending_items": items,
+        "pending_total": total,
+    }
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出入井管理清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "shift", "total": total, "items": items}
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -56,10 +77,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出入井管理清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "shift", "total": total, "items": items}

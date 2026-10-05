@@ -1,11 +1,17 @@
-"""矿区台账接口：维护矿区，覆盖停产整顿、恢复生产、闭坑登记等动作。"""
+"""矿区台账接口：维护矿区，覆盖批量建档、停产整顿、恢复生产、闭坑登记等动作。"""
 from __future__ import annotations
 
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas import ActionResult, EntryPayload, PageResult
+from app.schemas import (
+    ActionResult,
+    EntryPayload,
+    MineareaBatchPayload,
+    MineareaBatchResult,
+    PageResult,
+)
 from app.services.minearea import MineareaService
 
 router = APIRouter(prefix="/api/minearea", tags=["矿区台账"])
@@ -28,6 +34,39 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+# 注意：固定路径要声明在 /{entry_id} 之前，否则会被当成矿区 id 解析
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出矿区台账清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "minearea", "total": total, "items": items}
+
+
+@router.post("/backfill-safety", response_model=ActionResult)
+def backfill_safety() -> ActionResult:
+    """存量矿区补全：沿用原有开采方式口径回填缺失的安全等级（幂等，可重复执行）。"""
+    count = service.backfill_stock()
+    return ActionResult(ok=True, message=f"已按开采方式口径回填 {count} 条存量矿区的安全等级")
+
+
+@router.post("/batch", response_model=MineareaBatchResult)
+def batch_create(payload: MineareaBatchPayload) -> MineareaBatchResult:
+    """批量建档：从表格文本一次提交一批矿区。
+
+    按矿区编号判重，重复登记的编号只保留最早进来的一条；编号格式不对或缺
+    开采矿种等必填项的行整行退回，其余照常入库，结果逐条回执。建档成功的
+    矿区会同步到入井名单待办；存量矿区按开采方式口径回填安全等级，已存在
+    矿区按开采矿种补全安全等级。
+    """
+    raw_rows = [item.model_dump(exclude_none=True) for item in payload.rows]
+    summary = service.batch_create(
+        content=payload.content,
+        filename=payload.filename,
+        raw_rows=raw_rows,
+    )
+    return MineareaBatchResult(**summary)
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -56,10 +95,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出矿区台账清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "minearea", "total": total, "items": items}
